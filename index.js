@@ -6,20 +6,39 @@ const clamd = require('clamdjs');
 const app = express();
 const port = 3000;
 
+// Initialize ClamAV client
+const scanner = clamd.createScanner('127.0.0.1', 3310);
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    clamav: {
+      enabled: true,
+      host: '127.0.0.1',
+      port: 3310
+    }
   });
 });
 
-// File conversion endpoint
+// File conversion endpoint with virus scanning
 app.post('/convert', express.raw({type: '*/*', limit: '10mb'}), async (req, res) => {
   try {
     if (!req.body || !req.body.length) {
       return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Scan file for viruses first
+    try {
+      const scanResult = await scanner.scanBuffer(req.body);
+      if (scanResult.isInfected) {
+        return res.status(400).json({ error: 'Virus detected in file' });
+      }
+    } catch (scanError) {
+      console.error('Virus scan failed:', scanError);
+      return res.status(500).json({ error: 'File scanning failed' });
     }
 
     const { targetFormat } = req.query;
